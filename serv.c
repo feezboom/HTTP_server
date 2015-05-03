@@ -1,3 +1,7 @@
+//Не готова функция perform_request() совсем.
+
+
+
 /*
  * Логика
  * -Сначала мы запускаем наш сервер для готовности приема входящих соединений(listen)
@@ -32,6 +36,9 @@
 #include <stdio.h>
 #include <assert.h>
 
+#define true 1
+#define false 0
+
 #define THREADS_NUMBER 10
 
 #define PORT 80
@@ -43,13 +50,14 @@
 #define BAD_REQUEST 400
 #define NOT_FOUND 404
 
-int run_server(char* server_dir, int server_port);
-int run_handling_requests(int server_fd);
-int parse(char* request, char* path);
-int respond(char* request);
-int perform_request(int client, char* request);
-void* thread_processing(void *client_number);
-
+//Структура сервера
+int main(int argc, char** argv);
+	int run_server(char* server_dir, int server_port);		//Запуск сервера: до состояния listen
+	int run_handling_requests(int server_fd);				//Работает с входящими соединениями, делает всё
+		int* run_threads(int threads_number);					//Запуск потоков
+			void* thread_processing(void *client_number);			//Функция рабоsты каждого потока
+				char* get_request(int client_socket);					//Принять запрос от клиента
+				int perform_request(int client, char* request);			//Исполнить запрос клиента
 
 
 /* Вид запроса: "GET path HTTP/version\r\n\r\n" 
@@ -73,8 +81,20 @@ int* run_threads(int threads_number) //Пусть возвращает пайп 
 	return our_pipe;
  }
  
- 
-int perform_request(int client, char* request)
+char* get_request(int client_socket)
+{
+	int nbytes;
+	char* req = (char*)malloc(MAX_REQUEST_SIZE*sizeof(char));
+	if ( /**/(nbytes = recv(client_socket, (void*)req, MAX_REQUEST_SIZE, 0))/**/ <= 0)
+		return NULL;
+	else 
+	{
+		req[nbytes] = '\0';
+		return req;
+	}
+	
+}
+int perform_request(int client_socket, char* request)
 {
 	 /*
 	  * 1) Отдача статики, т.е., как я понял, запрашивается файл, конкретный
@@ -84,39 +104,57 @@ int perform_request(int client, char* request)
 	  * Типа именно здесь мы должны ответить нашему клиенту, отправить ему то, что он запросил
 	 */
 	 
-	 
 	 return 0;
  }
  
 /*MUTEX!*/
 static pthread_mutex_t mtx = PTHREAD_MUTEX_INITIALIZER;
 void* thread_processing(void *our_pipe)
-{		
-	//Здесь должно быть описано ожидание потоком момента, пока в пайп
-	//не будут записаны данные
-		 
-//		perform_request(client, request);
+{	
+//Здесь описано ожидание потоком момента, пока в пайп
+//не будут записаны данные, и соответственно чтение этих данных
+
+	int* temp = (int*)our_pipe;
+	int read_fd = temp[0];
+	char* request;
+	
+	while(true)
+	{
+		int client_socket;
+//Блокируем доступ другим потокам...
+		pthread_mutex_lock(&mtx);								
+
+//Читаем до тех пор, пока не прочитаем что нибудь...
+		while (sizeof(int) != read(read_fd, &client_socket, sizeof(int)));
+
+//Даем возможность другим потокам что-нибудь прочитать...
+		pthread_mutex_unlock(&mtx);	
+
+//Далее, просто, получаем, обрабатываем, выполняем запрос(его распарсивание и исполнение).
+		request = get_request(client_socket);
+		if (request == NULL)
+			continue;			//Какая-то ошибка чтения из пайпа
+//После - обработка запроса(парсинг), и ответ на него
+		perform_request(client_socket, request);
+	}
+
 
 	return our_pipe;
 }
- 
- 
+
+
 int run_handling_requests(int server_fd)	//Функция обработки запросов
 {
+//Запускаем кучу потоков
 	int* our_pipe = run_threads(THREADS_NUMBER);
 	while (0 == 0)
 	{
 		int client = accept(server_fd, NULL, 0);
 		assert(client >=0);					//Как бы проверка на ошибку accept
-											//На этом этапе к нам поступил очередной запрос...
-		char buffer[MAX_REQUEST_SIZE], *request;
-		ssize_t received_bytes = recv(client, buffer, MAX_REQUEST_SIZE, 0);
-		assert(received_bytes >=0);			//Проверка с отловом ошибки, если нужно
-		buffer[received_bytes] = '\0'; 		//Запрос без символа-терминатора строки...
-		request = buffer;
-		
-											//Уже обработанный мы кладём в неименованый канал(пайп).
-		write(our_pipe[1], request, received_bytes + 1);
+
+//На этом этапе к нам поступил очередной запрос...
+//Перенаправляем поступившего клиента в очередь к потокам.
+		write(our_pipe[1], &client, sizeof(int));
 //Далее все заботы уже на потоках, здесь пока вроде всё...
 	}
 	return 0;
@@ -125,11 +163,11 @@ int run_handling_requests(int server_fd)	//Функция обработки з�
 
 int run_server(char* server_dir, int server_port)
 {
-	int server;
+	int server_socket;
 	struct sockaddr_in sa;
 	
 //Preparing server for working with requests	
-	server = socket(AF_INET, SOCK_STREAM, 0);		//Creating socket
+	server_socket = socket(AF_INET, SOCK_STREAM, 0);		//Creating socket
 	
 	sa.sin_family = AF_INET;
 	sa.sin_port = htons(server_port);
@@ -139,10 +177,10 @@ int run_server(char* server_dir, int server_port)
 //INADDR_BROADCAST - широковещательный адрес (255.255.255.255)
 //htonl, htons - учитывают порядок следования байтов в системе, little/big endian, и делают всё как надо
 
-	bind(server, (struct sockaddr *)&sa, sizeof(sa));		//Binding - assotiation server_socket_fd with sa?
-	listen(server, 10);										//listening with maximum 10 requests in queue
+	bind(server_socket, (struct sockaddr *)&sa, sizeof(sa));		//Binding - assotiation server_socket_fd with sa?
+	listen(server_socket, 10);										//listening with maximum 10 requests in queue
 //Preparing server finished, server is listening...
-	return server;
+	return server_socket;
 }
 
 
@@ -153,14 +191,12 @@ int main(int argc, char** argv)
 	
 	char *current_dir = argv[1];
 	int server_fd;
-//	int port = atoi(argv[2]);
+//	int port = atoi(argv[2]);		//зачем пользователем задается порт???
 	
 	server_fd = run_server(current_dir, PORT);	
 //Теперь сервер готов к приёму входящих соединений
 	run_handling_requests(server_fd);
-//Запускаем обработку входящих соединений сервера server_fd
+//Запустили обработку входящих соединений к серверу server_fd, всё там...
 	
-	
-	
-	return 0;
+		return 0;
 }
