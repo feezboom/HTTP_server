@@ -40,6 +40,7 @@
 #define false 0
 
 #define THREADS_NUMBER 10
+#define REQUESTS_IN_QUEUE 10
 
 #define PORT 80
 #define MAX_REQUEST_SIZE 1024
@@ -178,7 +179,7 @@ int run_server(char* server_dir, int server_port)
 //htonl, htons - учитывают порядок следования байтов в системе, little/big endian, и делают всё как надо
 
 	bind(server_socket, (struct sockaddr *)&sa, sizeof(sa));		//Binding - assotiation server_socket_fd with sa?
-	listen(server_socket, 10);										//listening with maximum 10 requests in queue
+	listen(server_socket, REQUESTS_IN_QUEUE);						//listening with maximum REQUESTS_IN_QUEUE requests in queue
 //Preparing server finished, server is listening...
 	return server_socket;
 }
