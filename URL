@@ -96,9 +96,7 @@ int getfile(char* filename)
 
 int main()
 {
-	//FILE* new;
-	//new=getfile("/home/krahmalev/test.txt");
-	//fprintf(new, "jsgsljegnseb");
+
 	
 	return(0);
 }	
