@@ -1,7 +1,5 @@
 //Не готова функция perform_request() совсем.
 
-
-
 /*
  * Логика
  * -Сначала мы запускаем наш сервер для готовности приема входящих соединений(listen)
@@ -18,8 +16,6 @@
  * -Потоки же в это время следят за этим пайпом, готовые прочитать запрос из него,
  * как только он там появится, и удовлетворить его.
  * */
-
-
 #include <pthread.h>
 #include <sys/socket.h>
 #include <sys/types.h>
@@ -34,16 +30,25 @@
 #include <sys/un.h>
 #include <errno.h>
 #include <stdio.h>
+#include <dirent.h>
 #include <assert.h>
 
+#define SERVER_NAME "Bug Server 1.00001 2001"
+
+typedef int
 #define true 1
 #define false 0
+bool;
 
 #define THREADS_NUMBER 10
 #define REQUESTS_IN_QUEUE 10
 
-#define PORT 80
+#define PORT 8080
+
 #define MAX_REQUEST_SIZE 1024
+#define MAX_URL_SIZE 4096
+#define MAX_BUFFER_SIZE 4096
+#define MAX_FILE_SIZE 1024*1024*3
 
 #define OK 200
 #define POST_OK 201
@@ -53,53 +58,37 @@
 
 //Структура сервера
 int main(int argc, char** argv);
-	int run_server(char* server_dir, int server_port);		//Запуск сервера: до состояния listen
+	int run_server(int server_port);						//Запуск сервера: до состояния listen
 	int run_handling_requests(int server_fd);				//Работает с входящими соединениями, делает всё
 		int* run_threads(int threads_number);					//Запуск потоков
 			void* thread_processing(void *client_number);			//Функция рабоsты каждого потока
 				char* get_request(int client_socket);					//Принять запрос от клиента
-				int perform_request(int client, char* request);			//Исполнить запрос клиента
+				int perform_request(FILE* to_send, char* request);			//Исполнить запрос клиента
 
 
-/* Вид запроса: "GET path HTTP/version\r\n\r\n" 
- * Вместо version 1.0, or 1,1
+/* Вид запроса: "Request-Line [ General-Header | Request-Header | Entity-Header ]\r\n[ Entity-Body ]" 
+ * http://phpclub.ru/detail/article/http_request
  * */
- 
-int* run_threads(int threads_number) //Пусть возвращает пайп для обмена с потоками данными...
-{
-	assert(threads_number > 0);
-	 
-	int i; int* our_pipe = (int*)malloc(2*sizeof(int));
-	pipe(our_pipe);						//Создаём наш канал для очереди запросов
-	
-	pthread_t thread_id;				//Если создание потока успешно:
-		
-	for (i = 0; i < threads_number; ++i)
-		pthread_create(&thread_id, NULL, thread_processing, (void*)our_pipe);
-		
-	/*pthread_create(Идентификатор потока, атрибуты, функция запуска, аргумент функции запуска)*/
-	
-	return our_pipe;
- }
- 
 char* get_request(int client_socket)
 {
 	int nbytes;
 	char* req = (char*)malloc(MAX_REQUEST_SIZE*sizeof(char));
-	if ( /**/(nbytes = recv(client_socket, (void*)req, MAX_REQUEST_SIZE, 0))/**/ <= 0)
+	if ( /**/(nbytes = recv(client_socket, (void*)req, MAX_REQUEST_SIZE - 1, 0))/**/ <= 0)
 		return NULL;
 	else 
 	{
 		req[nbytes] = '\0';
+//		printf("our request:%s\n", req);
 		return req;
 	}
 	
 }
-int perform_request(int client_socket, char* request)
+int perform_request(FILE* to_send, char* request)
 {
+//	parse(to_send, request);
 	 /*
 	  * 1) Отдача статики, т.е., как я понял, запрашивается файл, конкретный
-	  * 2) Поддержка скриптов через cgi - запуск скрипта?????
+	  * 2) Поддержка скриптов через cgi
 	  * 3) Возможность загрузки файлов в POST запросах
 	  * 
 	  * Типа именно здесь мы должны ответить нашему клиенту, отправить ему то, что он запросил
@@ -107,6 +96,11 @@ int perform_request(int client_socket, char* request)
 	 
 	 return 0;
  }
+ 
+ 
+ 
+ 
+ 
  
 /*MUTEX!*/
 static pthread_mutex_t mtx = PTHREAD_MUTEX_INITIALIZER;
@@ -136,12 +130,30 @@ void* thread_processing(void *our_pipe)
 		if (request == NULL)
 			continue;			//Какая-то ошибка чтения из пайпа
 //После - обработка запроса(парсинг), и ответ на него
-		perform_request(client_socket, request);
+		FILE* to_send = fdopen(client_socket, "a+");
+		perform_request(to_send, request);
+		fclose(to_send);
 	}
-
-
 	return our_pipe;
 }
+int* run_threads(int threads_number) //Пусть возвращает пайп для обмена с потоками данными...
+{
+	assert(threads_number > 0);
+	 
+	int i; int* our_pipe = (int*)malloc(2*sizeof(int));
+	pipe(our_pipe);						//Создаём наш канал для очереди запросов
+	
+	pthread_t thread_id;				//Если создание потока успешно:		
+	for (i = 0; i < threads_number; ++i)
+		pthread_create(&thread_id, NULL, thread_processing, (void*)our_pipe);
+		
+	/*pthread_create(Идентификатор потока, атрибуты, функция запуска, аргумент функции запуска)*/
+	
+	return our_pipe;
+ }
+
+
+
 
 
 int run_handling_requests(int server_fd)	//Функция обработки запросов
@@ -160,9 +172,7 @@ int run_handling_requests(int server_fd)	//Функция обработки з�
 	}
 	return 0;
  }
-
-
-int run_server(char* server_dir, int server_port)
+int run_server(int server_port)
 {
 	int server_socket;
 	struct sockaddr_in sa;
@@ -187,14 +197,15 @@ int run_server(char* server_dir, int server_port)
 
 int main(int argc, char** argv)
 {
-	if (argc != 3) 
+	if (argc != 2) 
 		exit(EXIT_FAILURE);
 	
-	char *current_dir = argv[1];
 	int server_fd;
 //	int port = atoi(argv[2]);		//зачем пользователем задается порт???
 	
-	server_fd = run_server(current_dir, PORT);	
+	setbuf(stdout, NULL);
+	
+	server_fd = run_server(PORT);	
 //Теперь сервер готов к приёму входящих соединений
 	run_handling_requests(server_fd);
 //Запустили обработку входящих соединений к серверу server_fd, всё там...
