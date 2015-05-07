@@ -58,7 +58,7 @@ const char title_501[] = "Not Implemented";
 const char title_403[] = "Forbidden";
 const char title_404[] = "Not Found";
 const char title_200[] = "OK";
-/**/
+/*Titles*/
 
 
 //Структура сервера
@@ -79,10 +79,30 @@ int perform_request(FILE* to_send, char* request);			//Исполнить зап
 				int throw_headers(FILE* to_write, int code, const char* title, const char* content_type, const char* protocol);
 				char* get_content_type(const char* name);
 				void print_current_time();
+
 /* Вид запроса: "Request-Line [ General-Header | Request-Header | Entity-Header ]\r\n[ Entity-Body ]" 
- * http://phpclub.ru/detail/article/http_request
- * */
- 
+ * 
+ * Краткое руководство по запросам...
+ * http://phpclub.ru/detail/article/http_request 
+ * 
+ * Типичный запросы
+ * GET http://www.site.ru/news.html HTTP/1.0\r\n
+ *	Host: www.site.ru\r\n
+ *	Referer: http://www.site.ru/index.html\r\n
+ *	Cookie: income=1\r\n
+ *	\r\n
+ * 
+ * POST http://www.site.ru/news.html HTTP/1.0\r\n 
+ *	Host: www.site.ru\r\n 
+ *	Referer: http://www.site.ru/index.html\r\n 
+ *	Cookie: income=1\r\n 
+ *	Content-Type: application/x-www-form-urlencoded\r\n
+ *	Content-Length: 35\r\n
+ *	\r\n
+ *	login=Petya%20Vasechkin&password=qq
+ * 
+ * Ответ, например, должен отправляться в качестве html странички.
+*/
  
 char* protocol;
 void print_current_time()
@@ -98,7 +118,7 @@ char* get_content_type(const char* name)
 {
   char *ext = strrchr(name, '.');
   if (!ext) return NULL;
-  if (strcmp(ext, ".html") == 0 || strcmp(ext, ".htm") == 0) return "text/html";
+  if (strcmp(ext, ".html") == 0 || strcmp(ext, ".htm") == 0) return "html";
   if (strcmp(ext, ".jpg") == 0 || strcmp(ext, ".jpeg") == 0) return "image/jpeg";
   if (strcmp(ext, ".gif") == 0) return "image/gif";
   if (strcmp(ext, ".png") == 0) return "image/png";
@@ -159,7 +179,7 @@ int show_directory(FILE* to_write, const char* fullpath)
 	directory = opendir(fullpath);
 	throw_headers(to_write, 200, "OK", "html", protocol);
 	
-	fprintf(to_write, "<HTML><HEAD><TITLE>DIRECTORY: %s</TITLE></HEAD>\r\n<BODY>", fullpath);     
+	fprintf(to_write, "<HTML><HEAD><meta charset=\"utf-8\"><TITLE>DIRECTORY: %s</TITLE></HEAD>\r\n<BODY>", fullpath);     
 	fprintf(to_write, "<H4>DIRETORY: %s</H4>\r\n<PRE>\n", fullpath);
 	fprintf(to_write, "Item\r\n");
 	fprintf(to_write, "<HR>\r\n");
@@ -167,7 +187,7 @@ int show_directory(FILE* to_write, const char* fullpath)
 	fprintf(to_write, "<A HREF=\"..\">..</A>\r\n");
 	while((item = readdir(directory)))
 	{
-		if(!strcmp(item->d_name, ".") || !strcmp(item->d_name, ".."))
+		if(!strcmp(item->d_name, ".") || !strcmp(item->d_name, "..") || (item->d_name[0] == '.'))
 			continue;
 		strcpy(buf, fullpath);
 		if (buf[strlen(fullpath) - 1] != '/')
@@ -180,6 +200,14 @@ int show_directory(FILE* to_write, const char* fullpath)
 			fprintf(to_write, "<A HREF=\"%s%s\">%s%s</A>\r\n", item->d_name, slash, buf, slash);
 		}
 	}
+//А здесь вставим форму для отправки файлов методом POST
+	fprintf(to_write, "<HR>\r\n");
+	fprintf(to_write, "<H2>Загрузить файл в текущую директорию:</H2>\r\n<PRE>\n");
+	fprintf(to_write, "<form enctype=\"multipart/form-data\" method=\"post\">");
+   fprintf(to_write, "<p><input type=\"file\" name=\"f\">");
+   fprintf(to_write, "<input type=\"submit\" value=\"Отправить\"></p>");
+	fprintf(to_write, "</form>\r\n"); 
+//Конец формы
 	fprintf(to_write, "</PRE>\r\n<HR>\r\n<ADDRESS>%s ACOS-2015</ADDRESS>\r\n</BODY></HTML>\r\n", SERVER_NAME);
 	closedir(directory);
 	return 0;
@@ -238,6 +266,7 @@ int parse(FILE* to_write, char* request)
 	if (!request || strlen(request) < 3) return -1;
 	
 	char* head = strtok(request, "\r");
+	print_current_time();
 	printf("REQUEST:%s\n", head);
 
 	method = strtok(request, " ");
@@ -378,7 +407,7 @@ int main(int argc, char** argv)
 	if (argc != 1) 
 		exit(EXIT_FAILURE);
 		
-	setlocale(LC_ALL, "ru_RU.UTF-8");
+	setlocale(LC_ALL, "utf-8");
 	
 	int server_fd;
 //	int port = atoi(argv[2]);		//зачем пользователем задается порт???
