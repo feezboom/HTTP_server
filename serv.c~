@@ -1,3 +1,5 @@
+//Не готова функция perform_request() совсем.
+
 /*
  * Логика
  * -Сначала мы запускаем наш сервер для готовности приема входящих соединений(listen)
@@ -32,9 +34,6 @@
 #include <locale.h>
 #include <assert.h>
 
-#define PERM_DIRECTORY  S_IRWXU
-#define PERM_FILE      (S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH)
-
 #define SERVER_NAME "Bug Server 1.00001 2001"
 
 typedef int
@@ -51,16 +50,8 @@ bool;
 #define MAX_URL_SIZE 4096
 #define MAX_BUFFER_SIZE 4096
 #define MAX_FILE_SIZE 1024*1024*3
-#define MAX_PATH_SIZE 1024
 
-char* current_dir; //Это текущая директория
-int create_client_directory(char* directory_name)
-{
-	char full_path[MAX_PATH_SIZE] = "";
-	sprintf(full_path, "%s/%s", current_dir, directory_name);
-	printf("%s", full_path);
-	return mkdir(full_path, PERM_DIRECTORY);
-};
+char* current_dir = getenv("PWD"); //Это текущая директория
 
 /*Titles*/
 const char title_400[] = "Bad Request";
@@ -297,6 +288,7 @@ int parse(FILE* to_write, char* request)
 	}
 	return 0;
 }
+
 char* get_request(int client_socket)
 {
 	int nbytes;
@@ -405,7 +397,6 @@ int run_server(int server_port)
 
 	bind(server_socket, (struct sockaddr *)&sa, sizeof(sa));		//Binding - assotiation server_socket_fd with sa?
 	listen(server_socket, REQUESTS_IN_QUEUE);						//listening with maximum REQUESTS_IN_QUEUE requests in queue
-	create_client_directory("clients_files");
 	printf("Сервер запущен...\n");
 //Preparing server finished, server is listening...
 	return server_socket;
@@ -414,8 +405,6 @@ int run_server(int server_port)
 
 int main(int argc, char** argv)
 {
-	current_dir = getenv("PWD"); //Задание текущей директории(переменная глобальная)
-	
 	if (argc != 1) 
 		exit(EXIT_FAILURE);
 		
