@@ -32,33 +32,42 @@
 #include <locale.h>
 #include <assert.h>
 
+#define BYTE 1
+#define KBYTE  BYTE*1024
+#define MBYTE KBYTE*1024
+#define GBYTE MBYTE*1024
+#define TBYTE GBYTE*1024
+
 #define PERM_DIRECTORY  S_IRWXU
 #define PERM_FILE      (S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH)
 
 #define SERVER_NAME "Bug Server 1.00001 2001"
+
+#define REWRITE 1
 
 typedef int
 #define true 1
 #define false 0
 bool;
 
-#define THREADS_NUMBER 10
+#define THREADS_NUMBER 1
 #define REQUESTS_IN_QUEUE 10
 
 #define PORT 8080
 
-#define MAX_REQUEST_SIZE 1024
+#define PART_SIZE KBYTE*50
+#define MAX_REQUEST_SIZE 10*MBYTE
 #define MAX_URL_SIZE 4096
 #define MAX_BUFFER_SIZE 4096
 #define MAX_FILE_SIZE 1024*1024*3
 #define MAX_PATH_SIZE 1024
 
 char* current_dir; //Это текущая директория
+
 int create_client_directory(char* directory_name)
 {
 	char full_path[MAX_PATH_SIZE] = "";
 	sprintf(full_path, "%s/%s", current_dir, directory_name);
-	printf("%s", full_path);
 	return mkdir(full_path, PERM_DIRECTORY);
 };
 
@@ -71,6 +80,9 @@ const char title_404[] = "Not Found";
 const char title_200[] = "OK";
 /*Titles*/
 
+const char post_respond_ok[]  		= "<HTML><HEAD><meta charset=\"utf-8\"><TITLE>OK</TITLE></HEAD>\r\n<BODY><H4>Файл успешно загружен.<a href=\"%s\">Вернуться назад.\r\n<H4></BODY></HTML>\r\n";
+const char post_respond_failed[]  	= "<HTML><HEAD><meta charset=\"utf-8\"><TITLE>OK</TITLE></HEAD>\r\n<BODY><H4>Ошибка загрузки.<a href=\"%s\">Вернуться назад.\r\n<H4></BODY></HTML>\r\n";
+
 
 //Структура сервера
 int main(int argc, char** argv);
@@ -78,11 +90,11 @@ int main(int argc, char** argv);
 	int run_handling_requests(int server_fd);				//Работает с входящими соединениями, делает всё
 		int* run_threads(int threads_number);					//Запуск потоков
 			void* thread_processing(void *client_number);			//Функция рабоsты каждого потока
-				char* get_request(int client_socket);					//Принять запрос от клиента
-				int perform_request(FILE* to_send, char* request);			//Исполнить запрос клиента
+				int get_request(int client_socket, void* buffer);			//Принять запрос от клиента
+				int perform_request(FILE* to_send, void* request, int request_len);			//Исполнить запрос клиента
 
-int perform_request(FILE* to_send, char* request);			//Исполнить запрос клиента
-	int parse(FILE* to_write, char* request);
+int perform_request(FILE* to_send, void* request, int request_len);			//Исполнить запрос клиента
+	int parse(FILE* to_write,const void* our_request, int request_len);
 		int perform_get(FILE* to_write, char* path, char* protocol);
 			int show_directory(FILE* to_write, const char* fullpath);
 			int throw_file(FILE* to_write, const char* path, struct stat fileinfo);
@@ -215,13 +227,76 @@ int show_directory(FILE* to_write, const char* fullpath)
 	fprintf(to_write, "<HR>\r\n");
 	fprintf(to_write, "<H2>Загрузить файл в текущую директорию:</H2>\r\n<PRE>\n");
 	fprintf(to_write, "<form enctype=\"multipart/form-data\" method=\"post\">");
-   fprintf(to_write, "<p><input type=\"file\" name=\"f\">");
-   fprintf(to_write, "<input type=\"submit\" value=\"Отправить\"></p>");
+	fprintf(to_write, "<p><input type=\"file\" name=\"f\">");
+	fprintf(to_write, "<input type=\"submit\" value=\"Отправить\"></p>");
 	fprintf(to_write, "</form>\r\n"); 
 //Конец формы
 	fprintf(to_write, "</PRE>\r\n<HR>\r\n<ADDRESS>%s ACOS-2015</ADDRESS>\r\n</BODY></HTML>\r\n", SERVER_NAME);
 	closedir(directory);
 	return 0;
+}
+void post_ok(FILE* to_write, char* refferer)
+{
+	throw_headers(to_write, 200, title_200, "html", protocol);
+	fprintf(to_write, post_respond_ok, refferer);
+}
+void post_failed(FILE* to_write, char* refferer)
+{
+	throw_headers(to_write, 500, title_500, "html", protocol);
+	fprintf(to_write, post_respond_failed, refferer);
+}
+
+int perform_post(FILE* to_write, const void* request)
+{
+	void* memory = malloc(MAX_REQUEST_SIZE);
+//	memcpy(memory, request, len);
+	
+	char *length_pointer 	= strstr(request, "Content-Length: ") 	+ strlen("Content-Length: ");
+	char *boundary_pointer 	= strstr(request, "boundary=") 			+ strlen("boundary=");
+	char *filename_pointer	= strstr(request, "filename=")			+ strlen("filename=\"");
+	char *refferer_pointer 	= strstr(request, "Referer: ")			+ strlen("Referer: ");
+	char *data_begin		= strstr(filename_pointer, "\r\n\r\n")	+ strlen("\r\n\r\n");
+//	char *data_end			= strstr(data_begin, "\r\n");
+	
+	int content_length;
+	sscanf(length_pointer, "%d", &content_length);					//Выделяем нужную информацию из хэдэров
+	char *boundary = strtok(boundary_pointer, "\r");
+	char *filename = strtok(filename_pointer, "\"\r\n");
+	char *refferer = strtok(refferer_pointer, "\r\n");	
+	
+	void *data_end			= (void*)strstr(data_begin, boundary) - 200;
+	data_end = '\0';
+	
+	
+	printf("CONTENTLEN = %d\n", content_length);
+//	printf("content=***%s***", data_begin);
+	printf("ALLRIGHT***************\n");
+	
+	char  filepath[MAX_PATH_SIZE];									//Составляем полный путь к создаваемому файлу
+	sprintf(filepath, "%s/clients_files/%s", current_dir, filename);
+	
+	struct stat fileinfo;
+	if (stat(filepath, &fileinfo) < 0)
+	{
+		printf("File doesn't exist\n");
+		FILE* new_file = fopen(filepath, "wb");
+		fwrite(data_begin, 1, content_length, new_file);
+		fclose(new_file);
+		post_ok(to_write, refferer);
+	}
+	else 
+	{
+		printf("File exists. REWRITE MODE %s\n", REWRITE ? "ON" : "OFF");
+		if (REWRITE)
+		{
+			FILE* new_file = fopen(filepath, "wb");
+			fwrite(data_begin, 1, content_length, new_file);
+			fclose(new_file); 
+			post_ok(to_write, refferer);
+		}
+		else
+			post_failed(to_write, refferer);
+	}
 }
 int perform_get(FILE* to_write, char* path, char* protocol)
 {
@@ -230,12 +305,13 @@ int perform_get(FILE* to_write, char* path, char* protocol)
 //Склеиваем полный путь к запрашиваемому ресурсу
 	strcat(fullpath, current_dir);
 	strcat(fullpath,path);
-		
+
 	struct stat fileinfo;
 //Проверка на существование
 	if (stat(fullpath, &fileinfo) < 0)
 	{
 		throw_error(to_write, 404, title_404, "Requested resourse not found.");
+		free(fullpath);
 		return 404;
 	}
 	
@@ -252,33 +328,42 @@ int perform_get(FILE* to_write, char* path, char* protocol)
 		if (stat(buf, &fileinfo) >= 0)//Значит файл index.html существует, отправим его
 		{
 			int result = throw_file(to_write, buf, fileinfo);
+			free(fullpath);
 			return result;
 		}
 		else 	//значит файл index.html не существует, выведем список содержимого директории
 		{
 			int result = show_directory(to_write, fullpath);
+			free(fullpath);
 			return result;
 		}
 	}
 	if (S_ISREG(fileinfo.st_mode))
 	{
 		int result = throw_file(to_write, fullpath, fileinfo);
+		free(fullpath);
 		return result;
 	}
 	return -1;
 }
-int parse(FILE* to_write, char* request)
+int parse(FILE* to_write,const void* our_request, int request_len)
 {
+	
+	
+	void* request = malloc(request_len + 1);
+	memcpy(request, our_request, request_len);
+	((char*)request)[request_len] = '\0';
+	printf("\n\n\n\n\n**********BEGIN%sEND***********\n\n\n\n\n", (char*)request);
+	
+//	char *for_post	= strstr(request, "\r\n")	+ strlen("\r\n");
 /*Выделение метода, uri, протокола*/
 	char *method;
 	char *path;
-
 	if (!request || strlen(request) < 3) return -1;
 	
 	char* head = strtok(request, "\r");
 	print_current_time();
 	printf("REQUEST:%s\n", head);
-
 	method = strtok(request, " ");
 	path = strtok(NULL, " ");
 	protocol = strtok(NULL, "\r");
@@ -289,7 +374,12 @@ int parse(FILE* to_write, char* request)
 		perform_get(to_write, path, protocol);
 	else 
 	if(!strcasecmp("POST", method))
-	{	}
+	{
+//		memcpy(request, our_request, request_len);
+//		((char*)request)[request_len] = '\0';
+//		printf("REQ****BEGIN%sEND*****\n", (char*)request);
+		perform_post(to_write, our_request);
+	}
 	else
 	{
 		throw_error(to_write, 501, title_501, "Unknown method.");
@@ -297,22 +387,43 @@ int parse(FILE* to_write, char* request)
 	}
 	return 0;
 }
-char* get_request(int client_socket)
+int recvall(int sfd, void* buf, int len, int flags)
 {
-	int nbytes;
-	char* req = (char*)malloc(MAX_REQUEST_SIZE*sizeof(char));
-	if ( /**/(nbytes = recv(client_socket, (void*)req, MAX_REQUEST_SIZE - 1, 0))/**/ <= 0)
-		return NULL;
-	else 
-	{
-		req[nbytes] = '\0';
-		return req;
-	}
-	
+    int total = 0;
+    while(total < len)
+    {
+        int n = recv(sfd, buf + total, len - total, flags);
+        if(n ==  0) return total; 
+        if(n == -1) return -1;
+        total += n;
+    }
+    return total;
 }
-int perform_request(FILE* to_send, char* request)
+
+int get_request(int client_socket, void* buffer)//recieve all, не знаем размера
 {
-	parse(to_send, request);
+	long long buffer_size = PART_SIZE, nbytes, received = 0;
+	nbytes = recv(client_socket, (void*)buffer, PART_SIZE, 0);
+	received = nbytes;
+	while (100500)
+	{
+		nbytes = recvall(client_socket, (void*)buffer + received, PART_SIZE, MSG_DONTWAIT);
+		if (nbytes  >  0) 
+		{
+//			buffer_size *= 2;
+			received += nbytes;
+		}
+		if (nbytes <=  0)
+		{
+//			buffer[received] = '\0';
+			return received;
+		}
+	}
+	return received;
+}
+int perform_request(FILE* to_send, void* request, int request_len)
+{
+	parse(to_send, request, request_len);
 	 /*
 	  * 1) Отдача статики, т.е., как я понял, запрашивается файл, конкретный
 	  * 2) Поддержка скриптов через cgi
@@ -324,14 +435,14 @@ int perform_request(FILE* to_send, char* request)
  }
  /*MUTEX!*/
 static pthread_mutex_t mtx = PTHREAD_MUTEX_INITIALIZER;
-void* thread_processing(void *our_pipe)
+void* thread_processing(void *our_pipe)//править
 {	
 //Здесь описано ожидание потоком момента, пока в пайп
 //не будут записаны данные, и соответственно чтение этих данных
 
 	int* temp = (int*)our_pipe;
 	int read_fd = temp[0];
-	char* request;
+	void* request = malloc(MAX_REQUEST_SIZE);
 	
 	while(true)
 	{
@@ -345,13 +456,16 @@ void* thread_processing(void *our_pipe)
 //Даем возможность другим потокам что-нибудь прочитать...
 		pthread_mutex_unlock(&mtx);	
 
-//Далее, просто, получаем, обрабатываем, выполняем запрос(его распарсивание и исполнение).
-		request = get_request(client_socket);
-		if (request == NULL)
-			continue;			//Какая-то ошибка чтения из пайпа
+//Далее, просто, ПОЛУЧАЕМ, обрабатываем, выполняем запрос(его распарсивание и исполнение).
+		int request_len = get_request(client_socket, request);
+		if (request_len <= 0)
+			continue;			//Какая-то ошибка принятия запроса
+//		((char*)request)[request_len] = '\0';
+//		printf("*******%s***END", request);
+//		exit(1);
 //После - обработка запроса(парсинг), и ответ на него
 		FILE* to_send = fdopen(client_socket, "a+");
-		perform_request(to_send, request);
+		perform_request(to_send, request, request_len);
 		fclose(to_send);
 	}
 	return our_pipe;
@@ -402,9 +516,23 @@ int run_server(int server_port)
 //INADDR_LOOPBACK - адрес интерфейса (127.0.0.1)
 //INADDR_BROADCAST - широковещательный адрес (255.255.255.255)
 //htonl, htons - учитывают порядок следования байтов в системе, little/big endian, и делают всё как надо
+	int optval = 1;
+	if (setsockopt(server_socket, SOL_SOCKET, SO_REUSEADDR, &optval, sizeof(optval)) == -1)
+    {
+        perror("setsock error");
+        exit(EXIT_FAILURE);
+    }
 
-	bind(server_socket, (struct sockaddr *)&sa, sizeof(sa));		//Binding - assotiation server_socket_fd with sa?
-	listen(server_socket, REQUESTS_IN_QUEUE);						//listening with maximum REQUESTS_IN_QUEUE requests in queue
+	if (bind(server_socket, (struct sockaddr *)&sa, sizeof(sa)) == -1)
+	{
+		perror("BIND ERROR");
+		exit(EXIT_FAILURE);
+	}
+	if (listen(server_socket, REQUESTS_IN_QUEUE) == -1)						//listening with maximum REQUESTS_IN_QUEUE requests in queue
+	{
+		perror("LISTEN ERROR");
+		exit(EXIT_FAILURE);
+	}
 	create_client_directory("clients_files");
 	printf("Сервер запущен...\n");
 //Preparing server finished, server is listening...
