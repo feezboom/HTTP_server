@@ -17,7 +17,7 @@
 #include <assert.h>
 #include <limits.h>
 
-#define BYTE 1
+#define BYTE sizeof(char)
 #define KBYTE  BYTE*1024
 #define MBYTE KBYTE*1024
 #define GBYTE MBYTE*1024
@@ -36,8 +36,9 @@ typedef int
 bool;
 
 #define PORT 8080
-#define THREADS_NUMBER 1
+#define THREADS_NUMBER 10
 #define REQUESTS_IN_QUEUE 10
+static const int PART = 100*BYTE;
 #define PART_SIZE KBYTE*50
 #define MAX_REQUEST_SIZE 10*MBYTE
 #define MAX_URL_SIZE 4096
@@ -60,22 +61,7 @@ const char post_respond_failed[]  	= "<HTML><HEAD><meta charset=\"utf-8\"><TITLE
 char* protocol;
 char* current_dir;
 
-int main(int argc, char** argv);
-int run_server(int server_port);
-int run_handling_requests(int server_fd);
-int* run_threads(int threads_number);
-int get_request(int client_socket, void* buffer);
-int perform_request(FILE* to_send, void* request, int request_len);
 
-int perform_request(FILE* to_send, void* request, int request_len);	
-int parse(FILE* to_write,const void* our_request, int request_len);
-int perform_get(FILE* to_write, char* path, char* protocol);
-int show_directory(FILE* to_write, const char* fullpath);
-int throw_file(FILE* to_write, const char* path, struct stat fileinfo);
-int throw_error(FILE* to_write, int code, const char* title, const char* msg);
-int throw_headers(FILE* to_write, int code, const char* title, const char* content_type, const char* protocol);
-char* get_content_type(const char* name);
-void print_current_time();
 
 
 
