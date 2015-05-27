@@ -1,9 +1,10 @@
 int create_client_directory(char* directory_name);
+void fix_encoding(char *our_string);
 void print_current_time();
 char* get_content_type(const char* name);
-int throw_error(FILE* to_write, int code, const char* title, const char* msg);
+int throw_error(FILE* to_write, int error_code, const char* error_title, const char* error_message, const char *referrer, const char *console_message);
 int throw_headers(FILE* to_write, int code, const char* title, const char* content_type, const char* protocol);
-int throw_file(FILE* to_write, const char* path, struct stat fileinfo);
+int throw_file(FILE* to_write, const char* path, struct stat fileinfo, const char *referrer);
 int show_directory(FILE* to_write, const char* fullpath);
 int recvall(int sfd, void* buf, int len, int flags);
 void post_ok(FILE* to_write, char* refferer);
@@ -21,6 +22,27 @@ int run_server(int server_port);
 int main(int argc, char** argv);
 
 
+
+void fix_encoding(char *our_string)
+{
+	int i=0, j = i;
+		char* path1=(char*)calloc(strlen(our_string)+1,sizeof(char));	
+		for(i=0; i<strlen(our_string); i++,j++) {
+			if(our_string[i]!='%')
+				path1[j]=our_string[i];
+			else {
+				char* str=(char*)malloc(3*sizeof(char));
+				int new_symbol;
+				sprintf(str,"%c%c",our_string[i+1],our_string[i+2]);
+				sscanf(str,"%x",&new_symbol);
+				path1[j]=new_symbol;
+				i+=2;
+				free(str);
+			}
+		}
+		strcpy(our_string, path1); 
+		free(path1);
+}
 int create_client_directory(char* directory_name)
 {
 	char full_path[MAX_PATH_SIZE] = "";
@@ -52,15 +74,13 @@ char* get_content_type(const char* name)
   if (strcmp(ext, ".mp3") == 0) return "audio/mpeg";
   return NULL;
 }
-int throw_error(FILE* to_write, int code, const char* title, const char* msg)
+int throw_error(FILE* to_write, int error_code, const char* error_title, const char* error_message, const char *referrer, const char *console_message)
 {
-	if(code != 200) 
-	{	
-		throw_headers(to_write, code, title, "html/text", protocol);
-		fprintf(to_write,"<HTML><HEAD><TITLE>%d %s</TITLE></HEAD>\r\n<BODY><H4>Error %d %s: %s</H4></BODY></HTML>\r\n", code, title, code, title, msg);
-		print_current_time();
-		printf("Ошибка %d: %s\n",code, msg);
-	} 
+//	throw_headers(to_write, error_code, error_title, "html", protocol);
+	fprintf(to_write,"<HTML><HEAD><meta charset=\"utf-8\"><TITLE>%d %s</TITLE></HEAD>\r\n<BODY><H1><center>%d %s : %s</center></H1>\r\n<PRE>\n", error_code, error_title, error_code, error_title, error_message);
+	fprintf(to_write, "<H1><center><a href=\"%s\"><span style=\";font-family:Monotype Corsiva;font-size:40px;color:red;\">Вернуться на заглавную страницу :ъ</span></center></H1>\r\n<PRE>\n</BODY></HTML>\r\n", "/");
+	
+	print_current_time(); printf("Статус выполнения %d: %s\n", error_code, console_message);
 	return(0);
 }
 int throw_headers(FILE* to_write, int code, const char* title, const char* content_type, const char* protocol)
@@ -72,7 +92,7 @@ int throw_headers(FILE* to_write, int code, const char* title, const char* conte
 	fprintf(to_write, "\r\n");
 	return 0;
 }
-int throw_file(FILE* to_write, const char* path, struct stat fileinfo)
+int throw_file(FILE* to_write, const char* path, struct stat fileinfo, const char *referrer)
 {
 	char data[MAX_BUFFER_SIZE];
 	int i = 0;
@@ -82,7 +102,7 @@ int throw_file(FILE* to_write, const char* path, struct stat fileinfo)
 	{
 		char error_text[1024];
 		sprintf(error_text, "Forbidden. Access to file \"%s\" denied.", path);
-		throw_error(to_write, 403, title_403, error_text);
+		throw_error(to_write, 403, title_403, error_text, referrer, "can't find file");
 		return 403;
 	}
 	throw_headers(to_write, 200, "OK", get_content_type(path), protocol);
@@ -123,7 +143,7 @@ int show_directory(FILE* to_write, const char* fullpath)
 	}
 //Форма
 	fprintf(to_write, "<HR>\r\n");
-	fprintf(to_write, "<H2>Загрузить файл в текущую директорию:</H2>\r\n<PRE>\n");
+	fprintf(to_write, "<H2>Загрузить файл в директорию /clients_files:</H2>\r\n<PRE>\n");
 	fprintf(to_write, "<form enctype=\"multipart/form-data\" method=\"post\">");
 	fprintf(to_write, "<p><input type=\"file\" name=\"f\">");
 	fprintf(to_write, "<input type=\"submit\" value=\"Отправить\"></p>");
@@ -154,8 +174,6 @@ void post_failed(FILE* to_write, char* refferer)
 	throw_headers(to_write, 500, title_500, "html", protocol);
 	fprintf(to_write, post_respond_failed, refferer);
 }
-
-
 int str_copy_until_char(char* from, char* where, char stop)
 {
 	int i = 0;

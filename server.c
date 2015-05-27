@@ -1,8 +1,6 @@
 #include "server.h"
 #include "functions.h"
 
-int thread__ID = 0;
-
 int perform_post(int sock, char** buffer, int* total_received, int* buf_memory_allocated)
 {
 
@@ -39,6 +37,11 @@ int perform_post(int sock, char** buffer, int* total_received, int* buf_memory_a
 		strcasecmp("text/html", accept_type) ? strcpy(write_mode, "wb") : strcpy(write_mode, "w");
 	}
 	
+	setenv("REFERRER", referrer, 1);
+	setenv("BOUNDARY", boundary, 1);
+	setenv("CONTENT_LENGTH", length, 1);
+	setenv("ACCEPT_TYPE", accept_type, 1);
+	
 	recv_until_nbytes(sock, buffer, content_length, total_received, buf_memory_allocated);
 	
 	filename_pointer = strstr(*buffer, "filename=");
@@ -49,7 +52,6 @@ int perform_post(int sock, char** buffer, int* total_received, int* buf_memory_a
 	file_end = *buffer + *total_received - strlen(boundary) - strlen("\r\n\r\n") * 2 - strlen("\n");
 	file_size = file_end - file_begin + 1;
 	
-	
 //На данном этапе весь файл получен!!!:)
 	char  filepath[MAX_PATH_SIZE];									//Составляем полный путь к создаваемому файлу
 	sprintf(filepath, "%s/clients_files/%s", current_dir, filename);
@@ -58,31 +60,37 @@ int perform_post(int sock, char** buffer, int* total_received, int* buf_memory_a
 	FILE* to_write = fdopen(sock, "a+");
 	if (stat(filepath, &fileinfo) < 0)
 	{
-		printf("File %s doesn't exist\n", filename);
 		FILE* new_file = fopen(filepath, write_mode);
 		fwrite(file_begin, 1, file_size, new_file);
 		fclose(new_file);
-		post_ok(to_write, referrer);
+		throw_error(to_write, 200, title_200, post_respond_ok, referrer, "файл сохранён успешно.");
 	}
 	else 
 	{
-		printf("File %s exists. REWRITE MODE %s. ", filename, REWRITE ? "ON" : "OFF");
 		if (REWRITE)
 		{
 			FILE* new_file = fopen(filepath, write_mode);
 			fwrite(file_begin, 1, file_size, new_file);
 			fclose(new_file); 
-			post_ok(to_write, referrer);
+			throw_error(to_write, 200, title_200, post_respond_ok, referrer, "файл перезаписан успешно.");
 		}
 		else
-			post_failed(to_write, referrer);
+			throw_error(to_write, 500, title_500, post_respond_failed, referrer, "файл не сохранён.");
 	}
 	fclose(to_write);
 }
-int perform_get(FILE* to_write, char* path, char* answer_protocol)
+int perform_get(FILE* to_write, char* path, char* buffer)
 {
-	char* fullpath = (char*)malloc(MAX_URL_SIZE);
-	protocol = answer_protocol;
+	fix_encoding(buffer);
+	char* fullpath = (char*)malloc(MAX_URL_SIZE), referrer[4096], *referrer_pointer, *our_protocol_pointer;
+	
+	our_protocol_pointer = strstr(buffer, "HTTP");
+	referrer_pointer = strstr(buffer, "Referer: ");
+	
+	if (referrer_pointer)
+		str_copy_until_char(referrer_pointer + strlen("Referer: "), referrer, '\r');
+	if (our_protocol_pointer)
+		str_copy_until_char(our_protocol_pointer, protocol, '\r');
 	
 	sprintf(fullpath, "%s%s", current_dir, path);
 	
@@ -90,8 +98,8 @@ int perform_get(FILE* to_write, char* path, char* answer_protocol)
 	if (stat(fullpath, &fileinfo) < 0)
 	{
 		char msg[1024];
-		sprintf(msg, "Requested resourse %s not found.", fullpath);
-		throw_error(to_write, 404, title_404, msg);
+		sprintf(msg, "Объектика %s не существует на сервере :(", fullpath);
+		throw_error(to_write, 404, title_404, msg, referrer, "объект не найден");
 		free(fullpath);
 		return 404;
 	}
@@ -107,7 +115,7 @@ int perform_get(FILE* to_write, char* path, char* answer_protocol)
 		
 		if (stat(buf, &fileinfo) >= 0)
 		{
-			int result = throw_file(to_write, buf, fileinfo);
+			int result = throw_file(to_write, buf, fileinfo, referrer);
 			free(fullpath);
 			return result;
 		}
@@ -120,17 +128,16 @@ int perform_get(FILE* to_write, char* path, char* answer_protocol)
 	}
 	if (S_ISREG(fileinfo.st_mode))
 	{
-		int result = throw_file(to_write, fullpath, fileinfo);
+		int result = throw_file(to_write, fullpath, fileinfo, referrer);
 		free(fullpath);
 		return result;
 	}
 	return -1;
 }
-
 int request_processing(int sock)
 {
 	int nbytes = 0, total = 0, memory = PART + 1;
-	char *buffer = (char*)malloc(memory), method[5], path[4096], our_protocol[20];
+	char *buffer = (char*)malloc(memory), method[5], path[4096], our_protocol[20], *question_pointer;
 	protocol = our_protocol;	//Связывание глобальной переменной
 	
 	buffer[0] = '\0';
@@ -145,22 +152,28 @@ int request_processing(int sock)
 	
 //На этот момент получена первая строка запроса (метод, директория, протокол)	
 	
+	fix_encoding(path);
+	if ((question_pointer = strstr(path,"?")) != NULL) setenv("QUERY_STRING", question_pointer + 1 ,1);
+	else setenv("QUERY_STRING", "", 1);
+	
 	if (!strcasecmp("GET", method))
 	{
+		setenv("REQUEST_METHOD", "GET", 1);
 		recv_until_str(sock, &buffer, "\r\n\r\n", 1, &total, &memory);
 		FILE *to_write = fdopen(sock, "a+");
-		perform_get(to_write, path, protocol);
+		perform_get(to_write, path, buffer);
 		fclose(to_write);
 	}
 	else if (!strcasecmp("POST", method))
 	{
+		setenv("REQUEST_METHOD", "POST", 1);
 		perform_post(sock, &buffer, &total, &memory);
 		assert(memory >= total - PART);
 	}
 	else
 	{
 		FILE *to_write = fdopen(sock, "a+");
-		throw_error(to_write, 501, title_501, "Unknown method.");
+		throw_error(to_write, 501, title_501, "Unknown method.", "/", "неизвестный метод запроса.");
 		fclose(to_write);
 		free(buffer);
 		return 501;

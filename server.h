@@ -55,11 +55,13 @@ const char title_403[] = "Forbidden";
 const char title_404[] = "Not Found";
 const char title_200[] = "OK";
 
-const char post_respond_ok[]  		= "<HTML><HEAD><meta charset=\"utf-8\"><TITLE>OK</TITLE></HEAD>\r\n<BODY><H4>Файл успешно загружен.<a href=\"%s\">Вернуться назад.\r\n<H4></BODY></HTML>\r\n";
-const char post_respond_failed[]  	= "<HTML><HEAD><meta charset=\"utf-8\"><TITLE>OK</TITLE></HEAD>\r\n<BODY><H4>Ошибка загрузки.<a href=\"%s\">Вернуться назад.\r\n<H4></BODY></HTML>\r\n";
+const char post_respond_ok[]  		= "<HTML><HEAD><meta charset=\"utf-8\"><TITLE>OK</TITLE></HEAD><BODY><H4>Файл успешно загружен.<a href=\"%s\">Вернуться назад.<H4></BODY></HTML>";
+const char post_respond_failed[]  	= "<HTML><HEAD><meta charset=\"utf-8\"><TITLE>OK</TITLE></HEAD><BODY><H4>Ошибка загрузки.<a href=\"%s\">Вернуться назад.<H4></BODY></HTML>";
 
 char* protocol;
 char* current_dir;
+
+int thread__ID = 0;
 
 
 
