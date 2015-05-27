@@ -19,14 +19,13 @@ int perform_post(int sock, char** buffer, int* total_received, int* buf_memory_a
 	recv_until_str(sock, buffer, "\r\n\r\n", 1, total_received, buf_memory_allocated);
 	first_double_slash = *buffer + *total_received;
 	
-	referer_pointer = strstr(*buffer, "Referrer: ");
+	referer_pointer = strstr(*buffer, "Referer: ");
 	boundary_pointer = strstr(*buffer, "boundary=");
 	content_length_pointer = strstr(*buffer, "Content-Length: ");
 	accept_pointer = strstr(*buffer, "Accept: ");
 	
 	if (referer_pointer)
-		str_copy_until_char(referer_pointer + strlen("Referrer: "), referrer, '\r');
-	printf("REFERRER == %sEND", referrer);
+		str_copy_until_char(referer_pointer + strlen("Referer: "), referrer, '\r');
 	if (boundary_pointer)
 		str_copy_until_char(boundary_pointer + strlen("boundary="), boundary, '\r');
 	if (content_length_pointer)
@@ -67,7 +66,7 @@ int perform_post(int sock, char** buffer, int* total_received, int* buf_memory_a
 	}
 	else 
 	{
-		printf("File %s exists. REWRITE MODE %s", filename, REWRITE ? "ON" : "OFF");
+		printf("File %s exists. REWRITE MODE %s. ", filename, REWRITE ? "ON" : "OFF");
 		if (REWRITE)
 		{
 			FILE* new_file = fopen(filepath, write_mode);
@@ -83,13 +82,10 @@ int perform_post(int sock, char** buffer, int* total_received, int* buf_memory_a
 int perform_get(FILE* to_write, char* path, char* answer_protocol)
 {
 	char* fullpath = (char*)malloc(MAX_URL_SIZE);
-	
-	pthread_mutex_lock(&mtx);								
 	protocol = answer_protocol;
-	pthread_mutex_unlock(&mtx);	
 	
 	sprintf(fullpath, "%s%s", current_dir, path);
-
+	
 	struct stat fileinfo;
 	if (stat(fullpath, &fileinfo) < 0)
 	{
@@ -99,7 +95,6 @@ int perform_get(FILE* to_write, char* path, char* answer_protocol)
 		free(fullpath);
 		return 404;
 	}
-	
 	if (S_ISDIR(fileinfo.st_mode))
 	{
 		char buf[MAX_BUFFER_SIZE];
@@ -178,14 +173,14 @@ void* thread_processing(void *our_pipe)
 {	
 	int* temp = (int*)our_pipe, my_id = thread__ID++;
 	int read_fd = temp[0];
-	printf("THREAD_ID = %d started\n", my_id);
+//	printf("THREAD_ID = %d started\n", my_id);
 	while(true)
 	{
 		int client_socket;
 		pthread_mutex_lock(&mtx);								
 		while (sizeof(int) != read(read_fd, &client_socket, sizeof(int)));
 		pthread_mutex_unlock(&mtx);	
-		printf("Request by ID(%d) ", my_id);
+//		printf("Request by ID(%d) ", my_id);
 		request_processing(client_socket);
 	}
 	return our_pipe;
